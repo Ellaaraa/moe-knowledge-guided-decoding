@@ -87,17 +87,3 @@ def decode_vanilla(
         )
 
     return preds
-
-
-def main():
-    model = OLMoELM()
-    dev_examples = load_nq(split="train[:100]")  # small subset for testing
-
-    preds = decode_vanilla(model, dev_examples)
-
-    # later:
-    # em, f1 = compute_em_f1(preds)
-    # print({"em": em, "f1": f1})
-
-if __name__ == "__main__":
-    main()
