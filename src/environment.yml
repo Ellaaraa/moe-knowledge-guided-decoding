@@ -1,0 +1,23 @@
+name: moe-kgd
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - scikit-learn
+  - tqdm
+  - pip:
+      - torch>=2.1
+      - transformers>=4.45.0
+      - accelerate>=0.25.0
+      - datasets>=2.16.0
+      - huggingface-hub>=0.20.0
+      - sentencepiece
+      - protobuf
+      - faiss-cpu
+      - rank-bm25
+      - orjson

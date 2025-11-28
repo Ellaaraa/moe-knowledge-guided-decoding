@@ -1,0 +1,26 @@
+# Core ML & LLM libraries
+torch>=2.1
+transformers>=4.45.0
+accelerate>=0.25.0
+
+# HuggingFace ecosystem
+datasets>=2.16.0
+huggingface-hub>=0.20.0
+
+# Tokenization / utility
+sentencepiece
+protobuf
+tqdm
+
+# Data science utilities
+numpy
+pandas
+scikit-learn
+
+# Retrieval & text processing
+faiss-cpu
+rank-bm25
+
+# Optional: faster JSON handling
+orjson
+
