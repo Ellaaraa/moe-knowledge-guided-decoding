@@ -24,7 +24,6 @@ class OLMoELM:
         ).to(self.device)
 
     @torch.no_grad()  # Disable gradients for faster inference
-
     def generate(self, prompt: str, max_new_tokens: int = 64, temperature: float = 0.0) -> str:
         inputs = self.tokenizer(
             prompt,
