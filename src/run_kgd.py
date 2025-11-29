@@ -8,7 +8,7 @@ def main():
     model = OLMoELM()
 
     # small slice first so it's fast
-    examples = load_nq(split="train[:20]")
+    examples = load_nq(split="validation[:50]")
 
     # try a couple of alpha values later
     alpha = 0.5
