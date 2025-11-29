@@ -62,6 +62,8 @@ def main():
     em, f1 = compute_em_f1(preds_combined)
     print(f"Exact Match: {em:.2f}")
     print(f"F1         : {f1:.2f}")
+    
+    return preds_sim, preds_ent, preds_combined
 
 
 if __name__ == "__main__":

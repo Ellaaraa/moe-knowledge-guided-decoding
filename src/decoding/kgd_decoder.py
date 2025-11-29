@@ -447,14 +447,14 @@ def kgd_decode_single(
         # Step 12: Sample next token x_t ~ p_KGD(x_t|x_{<t})
         if temperature > 0.0:
             probs = torch.softmax(updated_logits / temperature, dim=-1)
-            next_token_id = torch.multinomial(probs[0], num_samples=1)
+            next_token_id = torch.multinomial(probs[0], num_samples=1).unsqueeze(0)  # (1,) -> (1, 1)
         else:
-            next_token_id = torch.argmax(probs, dim=-1).unsqueeze(0)
+            next_token_id = torch.argmax(probs, dim=-1, keepdim=True)  # (1, vocab) -> (1, 1)
         
         token_id = next_token_id.item()
         
         # Step 13: Update generated tokens x_{<t+1} = [x_{<t}, x_t]
-        input_ids = torch.cat([input_ids, next_token_id.unsqueeze(0)], dim=1)
+        input_ids = torch.cat([input_ids, next_token_id], dim=1)
         
         # Check for EOS token
         if token_id == tokenizer.eos_token_id:
