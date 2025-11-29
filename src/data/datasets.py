@@ -71,7 +71,7 @@ def _extract_answers(row) -> list[str]:
 
 def load_nq(
     split: str = "train",
-    config: str = "default",
+    config: str = "dev",
     max_examples: Optional[int] = None,
 ) -> List[QAExample]:
     """
