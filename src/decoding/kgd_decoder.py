@@ -28,6 +28,69 @@ class KGDPrediction:
 
 # ======================== Document Chunking ======================== #
 
+def build_kgd_prompt(example: QAExample, knowledge_chunks: List[str]) -> str:
+    """
+    Short-form QA prompt with retrieved contexts, matching the paper template:
+
+    Context information is below.
+    ---------------------
+    {retrieved context 1}
+    {retrieved context 2}
+    {retrieved context 3}
+    ---------------------
+    Given the context information and not prior knowledge, answer the query.
+    Query: {question}
+    Answer:
+    """
+    # Use at most three contexts, in ranked order.
+    contexts = [c.strip() for c in knowledge_chunks[:3] if c.strip()]
+    context_block = "\n".join(contexts)
+
+    return (
+        "Context information is below.\n"
+        "---------------------\n"
+        f"{context_block}\n"
+        "---------------------\n"
+        "Given the context information and not prior knowledge, answer the query.\n"
+        f"Query: {example.question}\n"
+        "Answer:"
+    )
+
+
+def build_bio_prompt(entity: str, knowledge_chunks: List[str]) -> str:
+    """
+    Long-form biography prompt template from the paper:
+
+    [Context 1]
+    {retrieved context 1}
+    [Context 2]
+    {retrieved context 2}
+    [Context 3]
+    {retrieved context 3}
+    ---------------------
+    Question: Tell me an at least 50 words bio of {entity}. You must summarize but
+    not directly copy the answer words by words from the contexts.
+    Answer:
+    """
+    contexts = [c.strip() for c in knowledge_chunks[:3] if c.strip()]
+    # Pad with empty strings so indices 0,1,2 always exist
+    while len(contexts) < 3:
+        contexts.append("")
+
+    return (
+        "[Context 1]\n"
+        f"{contexts[0]}\n"
+        "[Context 2]\n"
+        f"{contexts[1]}\n"
+        "[Context 3]\n"
+        f"{contexts[2]}\n"
+        "---------------------\n"
+        f"Question: Tell me an at least 50 words bio of {entity}. "
+        "You must summarize but not directly copy the answer words by words from the contexts.\n"
+        "Answer:"
+    )
+
+
 def chunk_documents(
     documents: List[str], 
     chunk_size: int = 500, 
@@ -116,9 +179,16 @@ class DocumentRetriever:
         # Get top-k indices
         top_k = min(top_k, len(chunks))
         top_indices = torch.topk(similarities, k=top_k).indices
+        retrieved = [chunks[idx] for idx in top_indices.cpu().numpy()]
+
+        # Debug print to surface retrieval stats for each query.
+        print(
+            f"[KGD] Retrieved {len(retrieved)} chunk(s) (top_k={top_k}) "
+            f"from {len(chunks)} candidate chunk(s) for query: '{query}'"
+        )
         
         # Return top-k chunks
-        return [chunks[idx] for idx in top_indices.cpu().numpy()]
+        return retrieved
 
 
 # ======================== Reward Functions ======================== #
@@ -392,7 +462,8 @@ def kgd_decode_single(
     reward_type = reward_function.__class__.__name__.replace("Reward", "").lower()
     
     # Step 2: Initialize generated tokens x_{<1} with q prepended with contexts k
-    base_prompt = build_vanilla_prompt(example)
+    # For KGD we explicitly include retrieved knowledge chunks in the prompt.
+    base_prompt = build_kgd_prompt(example, knowledge_chunks)
     
     # Tokenize base prompt
     inputs = tokenizer(
@@ -405,6 +476,7 @@ def kgd_decode_single(
     input_ids = inputs["input_ids"]  # (1, L)
     
     # Step 3-14: Generation loop (for t = 1 to T do)
+    last_logits: Optional[torch.Tensor] = None
     for t in range(max_new_tokens):
         # Step 4: Compute language model logits z(x_t|x_{<t}) over vocabulary
         with torch.no_grad():
@@ -440,6 +512,7 @@ def kgd_decode_single(
         updated_logits[0, top_m_indices] = (
             base_logits[0, top_m_indices] + weight * rewards_tensor
         )
+        last_logits = updated_logits[0].detach().cpu()
         
         # Step 11: Compute p_KGD(x_t|x_{<t}) by applying softmax over updated logits
         probs = torch.softmax(updated_logits, dim=-1)
@@ -462,6 +535,15 @@ def kgd_decode_single(
     
     # Step 15: return Generated text x_{<T+1}
     full_text = tokenizer.decode(input_ids[0], skip_special_tokens=True)
+
+    # Surface the final logits for debugging (print top tokens to keep output concise)
+    if last_logits is not None:
+        final_top_values, final_top_indices = torch.topk(last_logits, k=10)
+        final_tokens = tokenizer.convert_ids_to_tokens(final_top_indices.tolist())
+        final_info = ", ".join(
+            f"{tok}:{val:.3f}" for tok, val in zip(final_tokens, final_top_values.tolist())
+        )
+        print(f"[KGD] Final logits top-10 tokens: {final_info}")
     
     # Extract answer
     if "Answer:" in full_text:
