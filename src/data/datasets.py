@@ -51,40 +51,52 @@ def _tokens_to_text(tokens, start_token: Optional[int] = None, end_token: Option
 
 
 def _extract_answers(row) -> list[str]:
-    """
-    Extract short answer texts from NQ annotations.
-    If no short answers, fall back to the long answer span (as a single string),
-    otherwise return [].
-    """
-    annotations = row.get("annotations", [])
-    if not annotations:
+    annotations = row["annotations"]
+
+    # If there is no annotation, just return empty list
+    if annotations is None:
         return []
 
-    ann = annotations[0]
+    # HF NQ can sometimes store a *single* annotation as a dict,
+    # or as a list/sequence of annotations.
+    if isinstance(annotations, dict):
+        ann = annotations
+    else:
+        # try to treat it as a sequence
+        try:
+            annotations_list = list(annotations)
+        except TypeError:
+            # fallback: just use it as-is
+            ann = annotations
+        else:
+            if len(annotations_list) == 0:
+                return []
+            ann = annotations_list[0]
 
-    # 1) Prefer short answers if present
-    short_answers = ann.get("short_answers", []) or []
-    answers = [sa["text"] for sa in short_answers if sa.get("text")]
-    if answers:
-        return answers
+    answers: list[str] = []
 
-    # 2) Fallback: use long answer tokens if available
-    long_ans = ann.get("long_answer", {}) or {}
-    cand_idx = long_ans.get("candidate_index", -1)
-    if cand_idx is None or cand_idx < 0:
-        return []
+    # short_answers is usually a list of dicts with a "text" field
+    short_answers = ann.get("short_answers") or []
+    for sa in short_answers:
+        text = sa.get("text")
+        # Some formats put text as a list of strings
+        if isinstance(text, list):
+            for t in text:
+                if t:
+                    answers.append(t)
+        elif text:
+            answers.append(text)
 
-    cands = row.get("long_answer_candidates", []) or []
-    if not (0 <= cand_idx < len(cands)):
-        return []
+    # Handle yes/no questions if there are no span answers
+    yes_no = ann.get("yes_no_answer", None)
+    if not answers and yes_no is not None and yes_no != -1:
+        # NQ uses 1 = yes, 0 = no (sometimes), -1 = none
+        if yes_no == 1:
+            answers.append("yes")
+        elif yes_no == 0:
+            answers.append("no")
 
-    cand = cands[cand_idx]
-    start_tok = cand.get("start_token", 0)
-    end_tok = cand.get("end_token", 0)
-
-    doc_tokens = row["document"]["tokens"]
-    long_text = _tokens_to_text(doc_tokens, start_tok, end_tok)
-    return [long_text] if long_text.strip() else []
+    return answers
 
 
 def load_nq(
