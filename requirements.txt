@@ -20,6 +20,7 @@ scikit-learn
 # Retrieval & text processing
 faiss-cpu
 rank-bm25
+sentence-transformers
 
 # Optional: faster JSON handling
 orjson

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import re
 import string
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Tuple, Union
 
 from decoding.vanilla import VanillaPrediction
+from decoding.kgd_decoder import KGDPrediction
 
 
 # --- Text normalization helpers (SQuAD-style) ------------------------------
@@ -84,13 +85,13 @@ def _max_over_ground_truths(
 
 
 def compute_em_f1(
-    predictions: Iterable[VanillaPrediction],
+    predictions: Iterable[Union[VanillaPrediction, KGDPrediction]],
 ) -> Tuple[float, float]:
     """
     Compute dataset-level Exact Match (EM) and F1.
 
     Args:
-        predictions: iterable of VanillaPrediction objects
+        predictions: iterable of VanillaPrediction or KGDPrediction objects
 
     Returns:
         (em, f1) as percentages, e.g., (34.2, 47.8)
