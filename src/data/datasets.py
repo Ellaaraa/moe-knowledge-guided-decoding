@@ -17,16 +17,34 @@ class QAExample:
 def _tokens_to_text(tokens, start_token: Optional[int] = None, end_token: Optional[int] = None) -> str:
     """
     Convert NQ 'document.tokens' into plain text, dropping HTML tokens.
-    and restrict to [start_token, end_token).
+    Works for both:
+      - list of dicts: [{"token": ..., "is_html": ...}, ...]
+      - dict of lists: {"token": [...], "is_html": [...], ...}
     """
     if start_token is None:
         start_token = 0
+
+    # Case 1: dict-of-lists (HuggingFace NQ actual format)
+    if isinstance(tokens, dict):
+        token_list = tokens["token"]
+        is_html_list = tokens.get("is_html", [False] * len(token_list))
+
+        if end_token is None:
+            end_token = len(token_list)
+
+        words = []
+        end_token = min(end_token, len(token_list))
+        for i in range(start_token, end_token):
+            if not is_html_list[i]:
+                words.append(token_list[i])
+        return " ".join(words)
+
+    # Case 2: list-of-dicts (our earlier toy example)
     if end_token is None:
         end_token = len(tokens)
 
-    words: List[str] = []
+    words = []
     for t in tokens[start_token:end_token]:
-        # tokens have shape: {"token": str, "start_byte": int, "end_byte": int, "is_html": bool}
         if not t.get("is_html", False):
             words.append(t["token"])
     return " ".join(words)
