@@ -7,8 +7,11 @@ from eval.metrics import compute_em_f1
 def main():
     model = OLMoELM()
 
-    # Start with a small slice so it runs fast while debugging
-    examples = load_nq(split="train[:100]")
+    examples = load_nq(
+        split="validation",   # or "train"
+        config="dev",         # or "default" depending on which you want
+        max_examples=50,      # keep small in Colab at first
+    )
 
     preds = decode_vanilla(model, examples)
 
