@@ -28,25 +28,23 @@ class KGDPrediction:
 
 # ======================== Document Chunking ======================== #
 
-def build_kgd_prompt(example: QAExample, knowledge_chunks: List[str]) -> str:
+def build_kgd_prompt(
+    example: QAExample, 
+    knowledge_chunks: List[str],
+    tokenizer=None,
+    use_chat_template: bool = True,
+) -> str:
     """
-    Short-form QA prompt with retrieved contexts, matching the paper template:
-
-    Context information is below.
-    ---------------------
-    {retrieved context 1}
-    {retrieved context 2}
-    {retrieved context 3}
-    ---------------------
-    Given the context information and not prior knowledge, answer the query.
-    Query: {question}
-    Answer:
+    Short-form QA prompt with retrieved contexts.
+    
+    If tokenizer is provided and use_chat_template=True, applies the model's
+    chat template (required for instruction-tuned models like Qwen2.5-Instruct).
     """
     # Use at most three contexts, in ranked order.
     contexts = [c.strip() for c in knowledge_chunks[:3] if c.strip()]
     context_block = "\n".join(contexts)
 
-    return (
+    user_message = (
         "Context information is below.\n"
         "---------------------\n"
         f"{context_block}\n"
@@ -55,6 +53,24 @@ def build_kgd_prompt(example: QAExample, knowledge_chunks: List[str]) -> str:
         f"Query: {example.question}\n"
         "Answer:"
     )
+    
+    # Apply chat template for instruction-tuned models
+    if tokenizer is not None and use_chat_template and hasattr(tokenizer, 'apply_chat_template'):
+        messages = [
+            {"role": "system", "content": "You are a factual question-answering assistant. Answer briefly with just the answer phrase."},
+            {"role": "user", "content": user_message},
+        ]
+        try:
+            return tokenizer.apply_chat_template(
+                messages, 
+                tokenize=False, 
+                add_generation_prompt=True
+            )
+        except Exception:
+            # Fallback to raw prompt if chat template fails
+            pass
+    
+    return user_message
 
 
 def build_bio_prompt(entity: str, knowledge_chunks: List[str]) -> str:
@@ -463,7 +479,11 @@ def kgd_decode_single(
     
     # Step 2: Initialize generated tokens x_{<1} with q prepended with contexts k
     # For KGD we explicitly include retrieved knowledge chunks in the prompt.
-    base_prompt = build_kgd_prompt(example, knowledge_chunks)
+    # Pass tokenizer to apply chat template for instruction-tuned models.
+    base_prompt = build_kgd_prompt(example, knowledge_chunks, tokenizer=tokenizer)
+    
+    # Debug: print the prompt being passed to the model
+    print(f"\n[KGD] === PROMPT ===\n{base_prompt}\n[KGD] === END PROMPT ===\n")
     
     # Tokenize base prompt
     inputs = tokenizer(
