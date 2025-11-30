@@ -404,8 +404,9 @@ def kgd_decode_single(
     chunk_size: int = 500,
     chunk_overlap: int = 100,
     top_k_chunks: int = 3,
-    eos_penalty: float = 10.0,
-    min_new_tokens: int = 5,
+    eos_penalty: float = 0.0,
+    min_new_tokens: int = 0,
+    use_chat_template: bool = False,
 ) -> KGDPrediction:
     """
     Decode one QAExample with Knowledge-Guided Decoding (Algorithm 1).
@@ -482,7 +483,11 @@ def kgd_decode_single(
     # Step 2: Initialize generated tokens x_{<1} with q prepended with contexts k
     # For KGD we explicitly include retrieved knowledge chunks in the prompt.
     # Pass tokenizer to apply chat template for instruction-tuned models.
-    base_prompt = build_kgd_prompt(example, knowledge_chunks, tokenizer=tokenizer)
+    base_prompt = build_kgd_prompt(
+        example, knowledge_chunks, 
+        tokenizer=tokenizer, 
+        use_chat_template=use_chat_template
+    )
     
     # Debug: print the prompt being passed to the model
     print(f"\n[KGD] === PROMPT ===\n{base_prompt}\n[KGD] === END PROMPT ===\n")
@@ -600,6 +605,9 @@ def kgd_decode(
     top_m: int = 4,
     temperature: float = 0.0,
     show_progress: bool = True,
+    eos_penalty: float = 0.0,
+    min_new_tokens: int = 0,
+    use_chat_template: bool = False,
 ) -> List[KGDPrediction]:
     """
     Run KGD on a collection of QAExample objects.
@@ -650,6 +658,9 @@ def kgd_decode(
             max_new_tokens=max_new_tokens,
             top_m=top_m,
             temperature=temperature,
+            eos_penalty=eos_penalty,
+            min_new_tokens=min_new_tokens,
+            use_chat_template=use_chat_template,
         )
         preds.append(pred)
     

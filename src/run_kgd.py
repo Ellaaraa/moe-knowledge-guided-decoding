@@ -5,13 +5,17 @@ from eval.metrics import compute_em_f1
 
 
 def main():
-    # Using Qwen2.5-3B-Instruct (instruction-tuned, smaller, no license gate)
-    model = CausalLM("Qwen/Qwen2.5-3B-Instruct")
+    # Using Llama 2 7B base model (as used in the paper, Section 5.3)
+    # NOTE: Requires accepting Meta's license at https://huggingface.co/meta-llama/Llama-2-7b-hf
+    # and running: huggingface-cli login
+    # Alternative: use "mistralai/Mistral-7B-v0.1" (open, no license gate)
+    model = CausalLM("meta-llama/Llama-2-7b-hf")
 
     # small slice first so it's fast
     examples = load_nq(split="validation[:50]")
 
     # Test different reward types with parameters from Section 5.3
+    # Base models: use_chat_template=False, top_m=4 (paper default)
     
     # 1. Similarity reward (w=2)
     print("\n" + "="*50)
@@ -23,7 +27,8 @@ def main():
         reward_type="similarity",
         weight=2.0,
         max_new_tokens=32,
-        top_m=10
+        top_m=4,
+        use_chat_template=False,  # Base model - no chat template
     )
     em, f1 = compute_em_f1(preds_sim)
     print(f"Exact Match: {em:.2f}")
@@ -40,7 +45,8 @@ def main():
         alpha=5.0,
         beta=10.0,
         max_new_tokens=32,
-        top_m=10
+        top_m=4,
+        use_chat_template=False,  # Base model - no chat template
     )
     em, f1 = compute_em_f1(preds_ent)
     print(f"Exact Match: {em:.2f}")
@@ -58,7 +64,8 @@ def main():
         alpha=5.0,   # contradiction penalty
         beta=10.0,   # entailment reward
         max_new_tokens=32,
-        top_m=10
+        top_m=4,
+        use_chat_template=False,  # Base model - no chat template
     )
     em, f1 = compute_em_f1(preds_combined)
     print(f"Exact Match: {em:.2f}")
