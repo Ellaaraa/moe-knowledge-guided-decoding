@@ -23,7 +23,7 @@ def main():
         reward_type="similarity",
         weight=2.0,
         max_new_tokens=32,
-        top_m=4
+        top_m=10
     )
     em, f1 = compute_em_f1(preds_sim)
     print(f"Exact Match: {em:.2f}")
@@ -40,7 +40,7 @@ def main():
         alpha=5.0,
         beta=10.0,
         max_new_tokens=32,
-        top_m=4
+        top_m=10
     )
     em, f1 = compute_em_f1(preds_ent)
     print(f"Exact Match: {em:.2f}")
@@ -58,7 +58,7 @@ def main():
         alpha=5.0,   # contradiction penalty
         beta=10.0,   # entailment reward
         max_new_tokens=32,
-        top_m=4
+        top_m=10
     )
     em, f1 = compute_em_f1(preds_combined)
     print(f"Exact Match: {em:.2f}")
