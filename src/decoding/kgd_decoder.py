@@ -404,6 +404,8 @@ def kgd_decode_single(
     chunk_size: int = 500,
     chunk_overlap: int = 100,
     top_k_chunks: int = 3,
+    eos_penalty: float = 10.0,
+    min_new_tokens: int = 5,
 ) -> KGDPrediction:
     """
     Decode one QAExample with Knowledge-Guided Decoding (Algorithm 1).
@@ -532,6 +534,11 @@ def kgd_decode_single(
         updated_logits[0, top_m_indices] = (
             base_logits[0, top_m_indices] + weight * rewards_tensor
         )
+        
+        # Penalize EOS token for the first min_new_tokens steps to prevent empty outputs
+        if t < min_new_tokens and tokenizer.eos_token_id is not None:
+            updated_logits[0, tokenizer.eos_token_id] -= eos_penalty
+        
         last_logits = updated_logits[0].detach().cpu()
         
         # Step 11: Compute p_KGD(x_t|x_{<t}) by applying softmax over updated logits
@@ -549,8 +556,8 @@ def kgd_decode_single(
         # Step 13: Update generated tokens x_{<t+1} = [x_{<t}, x_t]
         input_ids = torch.cat([input_ids, next_token_id], dim=1)
         
-        # Check for EOS token
-        if token_id == tokenizer.eos_token_id:
+        # Check for EOS token (only after min_new_tokens)
+        if token_id == tokenizer.eos_token_id and t >= min_new_tokens:
             break
     
     # Step 15: return Generated text x_{<T+1}
