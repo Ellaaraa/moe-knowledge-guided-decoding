@@ -2,7 +2,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
-class LlamaLM:
+class CausalLM:
     def __init__(
         self,
         model_name: str = "meta-llama/Llama-2-7b-hf",
@@ -11,14 +11,13 @@ class LlamaLM:
         max_length: int = 2048,
     ):
         """
-        Llama model wrapper with same interface as OLMoELM.
+        Generic causal LM wrapper with same interface as OLMoELM.
         
         Args:
-            model_name: HuggingFace model name. Options include:
-                - "meta-llama/Llama-2-7b-hf" (base, used in paper)
-                - "meta-llama/Llama-2-7b-chat-hf" (instruction-tuned)
-                - "meta-llama/Meta-Llama-3-8B" (newer)
-                - "meta-llama/Meta-Llama-3-8B-Instruct" (instruction-tuned)
+            model_name: HuggingFace model name. Examples:
+                - "Qwen/Qwen2.5-3B-Instruct"
+                - "meta-llama/Llama-2-7b-hf"
+                - "mistralai/Mistral-7B-v0.1"
             device: Device to use (defaults to cuda if available)
             dtype: Model dtype (bfloat16 recommended)
             max_length: Maximum sequence length

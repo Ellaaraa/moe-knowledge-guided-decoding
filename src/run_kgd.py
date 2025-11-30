@@ -1,12 +1,12 @@
-from models.llama import LlamaLM
+from models.llama import CausalLM
 from data.datasets import load_nq
 from decoding.kgd_decoder import kgd_decode
 from eval.metrics import compute_em_f1
 
 
 def main():
-    # Using Llama 2 7B as specified in the paper (Section 5.3)
-    model = LlamaLM("meta-llama/Llama-2-7b-hf")
+    # Using Qwen2.5-3B-Instruct (instruction-tuned, smaller, no license gate)
+    model = CausalLM("Qwen/Qwen2.5-3B-Instruct")
 
     # small slice first so it's fast
     examples = load_nq(split="validation[:50]")

@@ -1,7 +1,7 @@
 from models.olmoe import OLMoELM
-from models.llama import LlamaLM
+from models.llama import CausalLM
 
-__all__ = ["OLMoELM", "LlamaLM"]
+__all__ = ["OLMoELM", "CausalLM"]
 
 
 # # Base models (like in the paper)
