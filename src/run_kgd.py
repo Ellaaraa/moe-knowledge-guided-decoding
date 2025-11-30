@@ -1,11 +1,12 @@
-from models.olmoe import OLMoELM
+from models.llama import LlamaLM
 from data.datasets import load_nq
 from decoding.kgd_decoder import kgd_decode
 from eval.metrics import compute_em_f1
 
 
 def main():
-    model = OLMoELM()
+    # Using Llama 2 7B as specified in the paper (Section 5.3)
+    model = LlamaLM("meta-llama/Llama-2-7b-hf")
 
     # small slice first so it's fast
     examples = load_nq(split="validation[:50]")
