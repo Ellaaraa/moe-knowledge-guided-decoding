@@ -21,7 +21,15 @@ scikit-learn
 faiss-cpu
 rank-bm25
 sentence-transformers
+bitsandbytes>=0.43.1
 
 # Optional: faster JSON handling
 orjson
+
+# Evaluation utilities
+pytrec_eval
+polars
+
+# Configuration / validation
+pydantic>=2
 
