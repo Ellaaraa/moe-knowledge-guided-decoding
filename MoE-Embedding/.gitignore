@@ -5,5 +5,5 @@ __pycache__/
 *$py.class
 *.log
 *.pt
-*.json
+#s
 *.npy
