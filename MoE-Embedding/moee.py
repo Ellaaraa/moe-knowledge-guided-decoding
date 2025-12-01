@@ -207,7 +207,7 @@ class MOEE(torch.nn.Module):
                 for prompt in prompt_templates:
                     prompts.append(prompt.replace('*sent 0*', sent).replace('_', ' ').strip())
             
-            prompts = self.tokenizer(prompts, padding=True, return_tensors="pt")
+            prompts = self.tokenizer(prompts, padding=True, return_tensors="pt").to(self.device)
 
             if get_cache:
                 inputs['use_cache'] = True               
