@@ -69,6 +69,10 @@ SET_TO_TASK_TO_DS_TO_PROMPT = {
                 'query': 'Given a claim, find documents that refute the claim',
                 'corpus': '',
             },
+            'NaturalQuestionsHF': {
+                'query': 'Given a question, retrieve the source document that answers it',
+                'corpus': '',
+            },
             'ClimateFEVER': {
                 'query': 'Given a claim about climate change, retrieve documents that support or refute the claim',
                 'corpus': '',
@@ -1173,15 +1177,26 @@ if __name__ == '__main__':
 
         kwargs = {"task_langs": ['en']}
         if args.task_names:
-            kwargs["tasks"] = args.task_names.split(",")
-        elif args.task_types:
+            task_names_list = args.task_names.split(",")
+        else:
+            task_names_list = None
+
+        if args.task_types:
             kwargs["task_types"] = args.task_types.split(",")
 
-        if args.task_idx != -1:
-            print('args.task_idx: ', args.task_idx)
-            tasks = [(task, kwargs["task_types"][0]) for task in SET_TO_TASK_TO_DS_TO_PROMPT[args.instruction_set][kwargs["task_types"][0]]][args.task_idx:args.task_idx+1]
+        # If explicit task_names are provided, use them directly (fallback type: Retrieval).
+        if task_names_list:
+            task_type = kwargs.get("task_types", ["Retrieval"])[0]
+            tasks = [(task, task_type) for task in task_names_list]
         else:
-            tasks = [(task, kwargs["task_types"][0]) for task in SET_TO_TASK_TO_DS_TO_PROMPT[args.instruction_set][kwargs["task_types"][0]]]
+            # Legacy behavior: derive tasks from instruction-set mapping using task_types
+            task_type = kwargs["task_types"][0]
+            task_pool = SET_TO_TASK_TO_DS_TO_PROMPT[args.instruction_set][task_type]
+            if args.task_idx != -1:
+                print('args.task_idx: ', args.task_idx)
+                tasks = [(task, task_type) for task in task_pool][args.task_idx:args.task_idx+1]
+            else:
+                tasks = [(task, task_type) for task in task_pool]
         
         if args.max_length is not None:
             model.encode = partial(model.encode, max_length=args.max_length)
