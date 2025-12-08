@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Sequence, Optional
+from typing import Any, Dict, Iterable, List, Sequence, Optional
 from abc import ABC, abstractmethod
 
 import torch
@@ -587,6 +587,234 @@ def kgd_decode_single(
         num_chunks=len(knowledge_chunks),
         reward_type=reward_type,
     )
+
+
+# ======================== Debug / Trajectory Inspection ======================== #
+
+def debug_trajectory(
+    model: OLMoELM,
+    example: QAExample,
+    reward_function: Optional[RewardFunction] = None,
+    weight: float = 2.0,
+    max_new_tokens: int = 32,
+    top_m: int = 4,
+    temperature: float = 0.0,
+    chunk_size: int = 500,
+    chunk_overlap: int = 100,
+    top_k_chunks: int = 3,
+    eos_penalty: float = 10.0,
+    min_new_tokens: int = 5,
+    use_chat_template: bool = False,
+    verbose: bool = False,
+) -> Dict[str, Any]:
+    """
+    Run KGD decoding but record, at each step t, the vanilla vs KGD next-token
+    decisions and rewards on top-m candidates.
+
+    This is useful for debugging and understanding how KGD modifies token selection.
+
+    Args:
+        model: Language model (OLMoELM or CausalLM with same interface)
+        example: QA example with question and context
+        reward_function: Reward function to use (default: SimilarityReward)
+        weight: Weight parameter w for reward (default: 2.0)
+        max_new_tokens: Maximum number of tokens to generate
+        top_m: Number of top tokens to consider for reward (default: 4)
+        temperature: Sampling temperature (0.0 = greedy after reward)
+        chunk_size: Size of document chunks in characters
+        chunk_overlap: Overlap between chunks in characters
+        top_k_chunks: Number of chunks to retrieve (N in paper, default: 3)
+        eos_penalty: Penalty for EOS token in early steps
+        min_new_tokens: Minimum tokens before allowing EOS
+        use_chat_template: Whether to use chat template for prompt
+        verbose: Whether to print debug info during decoding
+
+    Returns:
+        Dict containing:
+          - 'question', 'gold_answers'
+          - 'prompt': full prompt used
+          - 'reward_type', 'weight'
+          - 'steps': list of per-step dicts, each with:
+              * 't': step index
+              * 'vanilla_token_id', 'vanilla_token'
+              * 'kgd_token_id', 'kgd_token'
+              * 'top_m_ids', 'top_m_tokens', 'rewards'
+              * 'partial_vanilla': what vanilla would have generated so far
+              * 'partial_kgd': what KGD has generated so far
+          - 'final_vanilla_answer': full vanilla answer (argmax at each step)
+          - 'final_kgd_answer': full KGD answer
+    """
+    device = model.device
+    tokenizer = model.tokenizer
+
+    # Step 1: documents and chunks
+    docs = [example.context] if example.context else []
+    if not docs:
+        return {
+            "question": example.question,
+            "gold_answers": example.answers,
+            "prompt": build_vanilla_prompt(example),
+            "reward_type": "none",
+            "weight": weight,
+            "steps": [],
+            "final_vanilla_answer": "",
+            "final_kgd_answer": "",
+            "note": "No context; would fall back to vanilla decoding.",
+        }
+
+    chunks = chunk_documents(docs, chunk_size=chunk_size, overlap=chunk_overlap)
+
+    retriever = DocumentRetriever()
+    knowledge_chunks = retriever.retrieve_chunks(
+        example.question, chunks, top_k=top_k_chunks
+    )
+
+    # Reward function
+    if reward_function is None:
+        reward_function = SimilarityReward()
+    reward_type = reward_function.__class__.__name__.replace("Reward", "").lower()
+
+    # Step 2: prompt with retrieved knowledge
+    base_prompt = build_kgd_prompt(
+        example, knowledge_chunks, tokenizer=tokenizer, use_chat_template=use_chat_template
+    )
+
+    inputs = tokenizer(
+        base_prompt,
+        return_tensors="pt",
+        max_length=model.max_length,
+        truncation=True,
+    ).to(device)
+    
+    # KGD input_ids (will be modified during KGD decoding)
+    kgd_input_ids = inputs["input_ids"].clone()  # (1, L)
+    # Vanilla input_ids (will be modified during vanilla decoding simulation)
+    vanilla_input_ids = inputs["input_ids"].clone()  # (1, L)
+    
+    prompt_length = kgd_input_ids.size(1)
+
+    steps: List[Dict[str, Any]] = []
+
+    for t in range(max_new_tokens):
+        # ---- KGD path ----
+        with torch.no_grad():
+            out = model.model(
+                input_ids=kgd_input_ids,
+                attention_mask=torch.ones_like(kgd_input_ids),
+            )
+            base_logits = out.logits[:, -1, :]  # (1, vocab)
+
+        # Vanilla decision (no reward) - argmax of base logits
+        vanilla_id = torch.argmax(base_logits, dim=-1).item()
+        vanilla_token = tokenizer.convert_ids_to_tokens([vanilla_id])[0]
+
+        # Top-m from base logits
+        top_m_actual = min(top_m, base_logits.size(-1))
+        top_m_values, top_m_indices = torch.topk(base_logits[0], k=top_m_actual)
+
+        # Compute rewards for each candidate in V_m
+        rewards = []
+        for idx in top_m_indices:
+            candidate_ids = torch.cat(
+                [kgd_input_ids, idx.view(1, 1)],
+                dim=1,
+            )  # (1, L+1)
+            y_t = tokenizer.decode(candidate_ids[0], skip_special_tokens=True)
+            r = reward_function.compute_reward(y_t, knowledge_chunks)
+            rewards.append(r)
+
+        rewards_tensor = torch.tensor(rewards, device=device, dtype=base_logits.dtype)
+
+        # Updated logits with reward
+        updated_logits = base_logits.clone()
+        updated_logits[0, top_m_indices] = (
+            base_logits[0, top_m_indices] + weight * rewards_tensor
+        )
+
+        # Optional EOS penalty
+        if t < min_new_tokens and tokenizer.eos_token_id is not None:
+            updated_logits[0, tokenizer.eos_token_id] -= eos_penalty
+
+        # KGD decision
+        probs = torch.softmax(updated_logits, dim=-1)
+        if temperature > 0.0:
+            probs_temp = torch.softmax(updated_logits / temperature, dim=-1)
+            next_token_id = torch.multinomial(probs_temp[0], num_samples=1).unsqueeze(0)
+        else:
+            next_token_id = torch.argmax(probs, dim=-1, keepdim=True)
+
+        kgd_id = next_token_id.item()
+        kgd_token = tokenizer.convert_ids_to_tokens([kgd_id])[0]
+
+        # Update both trajectories
+        kgd_input_ids = torch.cat([kgd_input_ids, next_token_id], dim=1)
+        vanilla_input_ids = torch.cat(
+            [vanilla_input_ids, torch.tensor([[vanilla_id]], device=device)], dim=1
+        )
+
+        # Get partial decoded strings (only the generated part, not the prompt)
+        partial_kgd = tokenizer.decode(
+            kgd_input_ids[0, prompt_length:], skip_special_tokens=True
+        )
+        partial_vanilla = tokenizer.decode(
+            vanilla_input_ids[0, prompt_length:], skip_special_tokens=True
+        )
+
+        # Log this step
+        step_info = {
+            "t": t,
+            "vanilla_token_id": vanilla_id,
+            "vanilla_token": vanilla_token,
+            "kgd_token_id": kgd_id,
+            "kgd_token": kgd_token,
+            "tokens_match": vanilla_id == kgd_id,
+            "top_m_ids": top_m_indices.tolist(),
+            "top_m_tokens": tokenizer.convert_ids_to_tokens(top_m_indices.tolist()),
+            "top_m_logits": top_m_values.tolist(),
+            "rewards": rewards,
+            "partial_vanilla": partial_vanilla,
+            "partial_kgd": partial_kgd,
+        }
+        steps.append(step_info)
+
+        if verbose:
+            match_str = "SAME" if step_info["tokens_match"] else "DIFF"
+            print(
+                f"  t={t:02d} [{match_str}] vanilla='{vanilla_token}' kgd='{kgd_token}'"
+            )
+
+        # Stop on EOS after minimum length (for KGD trajectory)
+        if kgd_id == tokenizer.eos_token_id and t >= min_new_tokens:
+            break
+
+    # Final answers
+    final_kgd_text = tokenizer.decode(kgd_input_ids[0], skip_special_tokens=True)
+    final_vanilla_text = tokenizer.decode(vanilla_input_ids[0], skip_special_tokens=True)
+
+    # Extract just the answer part
+    if "Answer:" in final_kgd_text:
+        final_kgd_answer = final_kgd_text.split("Answer:", 1)[1].strip().split("\n")[0]
+    else:
+        final_kgd_answer = final_kgd_text[len(base_prompt):].strip()
+
+    if "Answer:" in final_vanilla_text:
+        final_vanilla_answer = final_vanilla_text.split("Answer:", 1)[1].strip().split("\n")[0]
+    else:
+        final_vanilla_answer = final_vanilla_text[len(base_prompt):].strip()
+
+    return {
+        "question": example.question,
+        "gold_answers": example.answers,
+        "prompt": base_prompt,
+        "knowledge_chunks": knowledge_chunks,
+        "reward_type": reward_type,
+        "weight": weight,
+        "steps": steps,
+        "final_vanilla_answer": final_vanilla_answer,
+        "final_kgd_answer": final_kgd_answer,
+        "num_steps": len(steps),
+        "num_matching_steps": sum(1 for s in steps if s["tokens_match"]),
+    }
 
 
 def kgd_decode(
