@@ -28,7 +28,8 @@ bitsandbytes>=0.43.1
 orjson
 
 # Evaluation utilities
-pytrec_eval
+# Use the binary wheel variant to avoid compiling native deps in most envs.
+pytrec-eval-terrier
 polars
 
 # Configuration / validation

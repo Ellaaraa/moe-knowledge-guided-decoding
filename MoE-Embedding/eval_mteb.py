@@ -1107,6 +1107,7 @@ def get_args():
     parser.add_argument('--pooling_method', default='mean', type=str)
     parser.add_argument('--save_qrels', action='store_true')
     parser.add_argument('--top_k', default=10, type=int)  
+    parser.add_argument('--max_examples', default=None, type=int, help="Optional cap on examples per split for tasks that support it.")
     
     parser.add_argument('--peft', default=None, required=False)
     parser.add_argument('--embed_method', default="none")
@@ -1256,6 +1257,7 @@ if __name__ == '__main__':
                 overwrite_results=args.overwrite_results,
                 output_folder=f"mteb_results_ablation/{task_type}/{args.base_model}_{args.use_4bit}_{task_name}_{args.do_pca}_{args.pca_dim}_{args.emb_info}_{args.embed_method}_{args.no_instruction}_{args.similarity_ensemble}_{args.similarity_weights}_{args.ablation}", 
                 encode_kwargs = {'do_pca': args.do_pca, 'pca_dim': args.pca_dim, 'emb_info': args.emb_info, 'embed_method': args.embed_method, 'batch_size': args.batch_size, 'similarity_ensemble': args.similarity_ensemble, 'similarity_weights': args.similarity_weights},
+                max_examples=args.max_examples,
             )
         
         
