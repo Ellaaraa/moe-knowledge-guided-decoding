@@ -16,6 +16,7 @@ tqdm
 numpy
 pandas
 scikit-learn
+matplotlib
 
 # Retrieval & text processing
 faiss-cpu
