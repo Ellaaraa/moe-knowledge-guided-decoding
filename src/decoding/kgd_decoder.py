@@ -159,7 +159,8 @@ class DocumentRetriever:
         Args:
             model_name: Name of the sentence transformer model
         """
-        self.model = SentenceTransformer(model_name)
+        # Force CPU to save GPU memory - embeddings are fast enough on CPU
+        self.model = SentenceTransformer(model_name, device='cpu')
     
     def retrieve_chunks(
         self, 

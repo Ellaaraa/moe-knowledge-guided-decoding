@@ -23,6 +23,8 @@ import sys
 from datetime import datetime
 from typing import Dict, List, Any
 
+import torch
+
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -65,6 +67,9 @@ def run_experiment(
     
     em, f1 = compute_em_f1(preds)
     print(f"  EM: {em:.2f}, F1: {f1:.2f}")
+    
+    # Clear GPU cache to prevent memory accumulation between configurations
+    torch.cuda.empty_cache()
     
     return {"EM": em, "F1": f1}
 
