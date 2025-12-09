@@ -251,6 +251,10 @@ def main():
         "--no-plot", action="store_true",
         help="Skip generating plots"
     )
+    parser.add_argument(
+        "--use-4bit", action="store_true",
+        help="Use 4-bit quantization to reduce memory usage (recommended for Colab free tier)"
+    )
     args = parser.parse_args()
     
     if args.quick:
@@ -299,7 +303,9 @@ def main():
     
     # Load model
     print("\nLoading model...")
-    model = OLMoELM()
+    if args.use_4bit:
+        print("Using 4-bit quantization to reduce memory usage")
+    model = OLMoELM(use_4bit=args.use_4bit)
     print(f"Model on: {model.device}")
     
     # Load data
