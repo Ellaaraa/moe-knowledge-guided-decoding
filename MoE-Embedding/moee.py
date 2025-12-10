@@ -384,16 +384,16 @@ Answer (extract from context):"""
         generated = input_ids
         attn_mask = attention_mask
         
-        # Create a mask for context tokens (for efficient logit biasing)
+        # Remove special tokens from context_token_ids to avoid boosting EOS/PAD
+        if context_token_ids:
+            special_tokens = {eos_token_id, pad_token_id, self.tokenizer.bos_token_id}
+            special_tokens.discard(None)
+            context_token_ids = context_token_ids - special_tokens
+        
+        # We'll create the bias tensor lazily after seeing actual vocab size from model
         context_bias = None
-        if context_token_ids and context_reward_weight > 0:
-            vocab_size = self.tokenizer.vocab_size
-            context_bias = torch.zeros(vocab_size, device=self.device)
-            for token_id in context_token_ids:
-                if token_id < vocab_size:
-                    context_bias[token_id] = context_reward_weight
 
-        for _ in range(max_new_tokens):
+        for step in range(max_new_tokens):
             # OLMoE model returns (outputs, sent_emb) tuple
             model_out = self.model(
                 input_ids=generated,
@@ -417,7 +417,15 @@ Answer (extract from context):"""
                 logits = outputs[0] if hasattr(outputs, "__getitem__") else outputs
             
             # Get logits for the last position
-            next_logits = logits[:, -1, :]
+            next_logits = logits[:, -1, :].clone()  # Clone to avoid modifying original
+            actual_vocab_size = next_logits.shape[-1]
+            
+            # Create context bias on first step (now we know actual vocab size)
+            if step == 0 and context_token_ids and context_reward_weight > 0:
+                context_bias = torch.zeros(actual_vocab_size, device=self.device, dtype=next_logits.dtype)
+                for token_id in context_token_ids:
+                    if 0 <= token_id < actual_vocab_size:
+                        context_bias[token_id] = context_reward_weight
             
             # Apply context bias (KGD-style reward)
             if context_bias is not None:
