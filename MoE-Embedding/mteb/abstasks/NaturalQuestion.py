@@ -330,7 +330,20 @@ class NaturalQuestions(AbsTaskRetrieval):
             try:
                 with open(save_path, "w") as f_out:
                     json.dump(qa_payload, f_out, indent=2)
+                # Print prominently so user can find the file
+                print(f"\n{'='*60}")
+                print(f"QA Predictions saved to: {save_path}")
+                print(f"{'='*60}\n")
                 logger.info(f"Saved QA predictions to {save_path}")
+                
+                # Also print a sample of predictions to stdout
+                print("Sample QA predictions:")
+                for i, item in enumerate(qa_payload[:3]):  # Show first 3
+                    print(f"\n--- Example {i+1} ---")
+                    print(f"Q: {item['question']}")
+                    print(f"Gold: {item['gold_answers'][:3]}")  # first 3 gold answers
+                    print(f"Pred: {item['prediction']}")
+                print(f"\n(See full predictions in {save_path})\n")
             except Exception as e:
                 logger.warning(f"Could not save QA predictions: {e}")
         
