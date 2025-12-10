@@ -159,7 +159,12 @@ class DocumentRetriever:
         Args:
             model_name: Name of the sentence transformer model
         """
-        self.model = SentenceTransformer(model_name)
+        # Force CPU to save GPU memory - embeddings are fast enough on CPU
+        self.model = SentenceTransformer(model_name, device='cpu')
+        # Explicitly ensure model and all submodules stay on CPU
+        self.model.to('cpu')
+        for param in self.model.parameters():
+            param.data = param.data.cpu()
     
     
     def retrieve_chunks(
@@ -182,9 +187,13 @@ class DocumentRetriever:
         if not chunks:
             return []
         
-        # Encode query and chunks
+        # Encode query and chunks - keep on CPU
         query_embedding = self.model.encode(query, convert_to_tensor=True)
         chunk_embeddings = self.model.encode(chunks, convert_to_tensor=True)
+        
+        # Explicitly ensure CPU (in case encoding moved to GPU)
+        query_embedding = query_embedding.cpu() if isinstance(query_embedding, torch.Tensor) else torch.tensor(query_embedding).cpu()
+        chunk_embeddings = chunk_embeddings.cpu() if isinstance(chunk_embeddings, torch.Tensor) else torch.tensor(chunk_embeddings).cpu()
         
         # Compute cosine similarity
         similarities = F.cosine_similarity(
@@ -206,6 +215,32 @@ class DocumentRetriever:
         
         # Return top-k chunks
         return retrieved
+
+
+# ======================== Global Retriever Singleton ======================== #
+
+# Global retriever instance (lazy-loaded, reused across all examples)
+_global_retriever = None
+
+def get_retriever(model_name: str = "sentence-transformers/all-mpnet-base-v2"):
+    """
+    Get or create the global DocumentRetriever instance.
+    
+    This singleton pattern ensures we only load the SentenceTransformer model
+    once, preventing RAM overflow when processing multiple examples.
+    
+    Args:
+        model_name: Name of the sentence transformer model
+        
+    Returns:
+        DocumentRetriever instance (reused across calls)
+    """
+    global _global_retriever
+    if _global_retriever is None:
+        print("[KGD] Initializing SentenceTransformer model (one-time, will be reused)...")
+        _global_retriever = DocumentRetriever(model_name)
+        print("[KGD] SentenceTransformer initialized on CPU")
+    return _global_retriever
 
 
 # ======================== Reward Functions ======================== #
@@ -467,8 +502,8 @@ def kgd_decode_single(
     # Chunk documents
     chunks = chunk_documents(docs, chunk_size=chunk_size, overlap=chunk_overlap)
     
-    # Retrieve top-k chunks
-    retriever = DocumentRetriever()
+    # Retrieve top-k chunks (reuse global retriever to avoid loading model multiple times)
+    retriever = get_retriever()
     knowledge_chunks = retriever.retrieve_chunks(
         example.question, chunks, top_k=top_k_chunks
     )
@@ -665,7 +700,8 @@ def debug_trajectory(
 
     chunks = chunk_documents(docs, chunk_size=chunk_size, overlap=chunk_overlap)
 
-    retriever = DocumentRetriever()
+    # Retrieve top-k chunks (reuse global retriever to avoid loading model multiple times)
+    retriever = get_retriever()
     knowledge_chunks = retriever.retrieve_chunks(
         example.question, chunks, top_k=top_k_chunks
     )
