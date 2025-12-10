@@ -110,7 +110,7 @@ class NaturalQuestions(AbsTaskRetrieval):
         dataset={
             "path": "google-research-datasets/natural_questions",
             "name": "default",
-            "revision": None,
+            "revision": "main",
         },
         description=(
             "Natural Questions benchmark. We expose it as a retrieval-style task "
