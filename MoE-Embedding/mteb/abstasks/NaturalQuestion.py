@@ -151,20 +151,27 @@ class NaturalQuestions(AbsTaskRetrieval):
         dataset_kwargs = {k: v for k, v in self.metadata_dict["dataset"].items() if v is not None}
 
         for split in eval_splits:
-            split_spec = split
-            if max_examples is not None:
-                # Limit download size on remote (e.g., Colab) to avoid filling disk.
-                split_spec = f"{split}[:{max_examples}]"
-            hf_ds = load_dataset(**dataset_kwargs, split=split_spec)
-            if max_examples is not None and hasattr(hf_ds, "select"):
-                hf_ds = hf_ds.select(range(max_examples))
+            # Use streaming mode for small slices to avoid downloading the entire ~41GB dataset
+            if max_examples is not None and max_examples <= 1000:
+                hf_ds = load_dataset(
+                    **dataset_kwargs,
+                    split=split,
+                    streaming=True,
+                )
+                # Convert streaming iterator to list after taking max_examples
+                hf_ds = list(tqdm(hf_ds.take(max_examples), desc=f"Streaming NQ [{split}]", total=max_examples))
+                total_examples = len(hf_ds)
+            else:
+                # For full dataset evaluation, use normal loading with caching benefits
+                hf_ds = load_dataset(**dataset_kwargs, split=split)
+                total_examples = len(hf_ds)
 
             corpus_split = {}
             queries_split = {}
             qrels_split = {}
             qa_split: List[QAExample] = []
 
-            for row in tqdm(hf_ds, desc=f"NaturalQuestionsHF [{split}]", total=len(hf_ds)):
+            for row in tqdm(hf_ds, desc=f"NaturalQuestionsHF [{split}]", total=total_examples):
                 qid = str(row.get("id"))
                 if qid is None:
                     continue
