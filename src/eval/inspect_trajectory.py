@@ -144,6 +144,10 @@ def main():
         "--verbose", "-v", action="store_true",
         help="Verbose output during decoding"
     )
+    parser.add_argument(
+        "--use-4bit", action="store_true",
+        help="Use 4-bit quantization to reduce memory usage (recommended for Colab)"
+    )
     
     args = parser.parse_args()
     
@@ -153,7 +157,9 @@ def main():
     
     # Load model
     print("\nLoading OLMoE model...")
-    model = OLMoELM()
+    if args.use_4bit:
+        print("Using 4-bit quantization to reduce memory usage")
+    model = OLMoELM(use_4bit=args.use_4bit)
     print(f"Model loaded on device: {model.device}")
     
     # Load examples
