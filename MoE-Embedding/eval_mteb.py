@@ -1122,6 +1122,11 @@ def get_args():
     
     parser.add_argument('--ablation', type=int, default=-1) # 1 for averaging pooling of moe_rw
     
+    # QA metrics arguments
+    parser.add_argument('--compute_qa_metrics', action='store_true', help='Compute Exact Match and F1 metrics for QA tasks (requires answer generation).')
+    parser.add_argument('--qa_max_tokens', type=int, default=32, help='Maximum tokens to generate for QA answers.')
+    parser.add_argument('--save_qa_predictions', action='store_true', help='Save QA predictions and gold answers to JSON for inspection.')
+    
     return parser.parse_args()
 
 
@@ -1258,6 +1263,9 @@ if __name__ == '__main__':
                 output_folder=f"mteb_results_ablation/{task_type}/{args.base_model}_{args.use_4bit}_{task_name}_{args.do_pca}_{args.pca_dim}_{args.emb_info}_{args.embed_method}_{args.no_instruction}_{args.similarity_ensemble}_{args.similarity_weights}_{args.ablation}", 
                 encode_kwargs = {'do_pca': args.do_pca, 'pca_dim': args.pca_dim, 'emb_info': args.emb_info, 'embed_method': args.embed_method, 'batch_size': args.batch_size, 'similarity_ensemble': args.similarity_ensemble, 'similarity_weights': args.similarity_weights},
                 max_examples=args.max_examples,
+                compute_qa_metrics=args.compute_qa_metrics,
+                qa_max_tokens=args.qa_max_tokens,
+                save_qa_predictions=args.save_qa_predictions,
             )
         
         
