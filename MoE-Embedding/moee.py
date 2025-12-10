@@ -286,6 +286,8 @@ class MOEE(torch.nn.Module):
         max_new_tokens: int = 32,
         temperature: float = 1.0,
         do_sample: bool = False,
+        use_context_guided: bool = True,
+        context_reward_weight: float = 2.0,
     ) -> str:
         """
         Generate an answer given a question and retrieved context.
@@ -296,11 +298,13 @@ class MOEE(torch.nn.Module):
             max_new_tokens: Maximum number of tokens to generate
             temperature: Sampling temperature (1.0 = greedy when do_sample=False)
             do_sample: Whether to use sampling (False = greedy decoding)
+            use_context_guided: If True, use KGD-style context-guided decoding
+            context_reward_weight: Bonus added to logits of context tokens (like KGD reward)
             
         Returns:
             Generated answer string
         """
-        # Format prompt for extractive QA - be VERY explicit about using context only
+        # Format prompt for extractive QA
         prompt = f"""Read the following context and answer the question. Your answer MUST be extracted directly from the context. Do NOT use outside knowledge. If the answer is not in the context, say "not found".
 
 Context: {context}
@@ -309,7 +313,7 @@ Question: {question}
 
 Answer (extract from context):"""
         
-        # Tokenize
+        # Tokenize prompt
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
@@ -317,20 +321,27 @@ Answer (extract from context):"""
             max_length=2048,
         ).to(self.device)
         
-        # Generate
-        outputs = self.model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            do_sample=do_sample,
-            pad_token_id=self.tokenizer.pad_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
-        ) if hasattr(self.model, "generate") else self._greedy_generate(
+        # For context-guided generation, tokenize context separately to get context token IDs
+        context_token_ids = None
+        if use_context_guided and context:
+            context_tokens = self.tokenizer(
+                context,
+                return_tensors="pt",
+                truncation=True,
+                max_length=1024,
+                add_special_tokens=False,
+            )
+            context_token_ids = set(context_tokens["input_ids"][0].tolist())
+        
+        # Use context-guided generation (KGD-style)
+        outputs = self._context_guided_generate(
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
             max_new_tokens=max_new_tokens,
             eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=self.tokenizer.pad_token_id,
+            context_token_ids=context_token_ids,
+            context_reward_weight=context_reward_weight if use_context_guided else 0.0,
         )
         
         # Decode only the generated part (exclude the prompt)
@@ -344,19 +355,43 @@ Answer (extract from context):"""
         
         return answer
 
-    def _greedy_generate(
+    def _context_guided_generate(
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         max_new_tokens: int,
         eos_token_id: int | None,
         pad_token_id: int | None,
+        context_token_ids: set | None = None,
+        context_reward_weight: float = 2.0,
     ) -> torch.Tensor:
         """
-        Minimal greedy generation fallback for models that do not expose `generate`.
+        KGD-style context-guided generation.
+        
+        During decoding, adds a bonus to the logits of tokens that appear in the context.
+        This biases the model toward generating tokens from the retrieved context,
+        similar to how KGD uses reward weights to guide generation.
+        
+        Args:
+            input_ids: Input token IDs (prompt)
+            attention_mask: Attention mask
+            max_new_tokens: Maximum tokens to generate
+            eos_token_id: End of sequence token ID
+            pad_token_id: Padding token ID
+            context_token_ids: Set of token IDs that appear in the context
+            context_reward_weight: Bonus added to logits of context tokens (higher = more bias toward context)
         """
         generated = input_ids
         attn_mask = attention_mask
+        
+        # Create a mask for context tokens (for efficient logit biasing)
+        context_bias = None
+        if context_token_ids and context_reward_weight > 0:
+            vocab_size = self.tokenizer.vocab_size
+            context_bias = torch.zeros(vocab_size, device=self.device)
+            for token_id in context_token_ids:
+                if token_id < vocab_size:
+                    context_bias[token_id] = context_reward_weight
 
         for _ in range(max_new_tokens):
             # OLMoE model returns (outputs, sent_emb) tuple
@@ -381,7 +416,16 @@ Answer (extract from context):"""
                 # Try indexing as a fallback
                 logits = outputs[0] if hasattr(outputs, "__getitem__") else outputs
             
-            next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+            # Get logits for the last position
+            next_logits = logits[:, -1, :]
+            
+            # Apply context bias (KGD-style reward)
+            if context_bias is not None:
+                # Add bonus to tokens that appear in context
+                next_logits = next_logits + context_bias.unsqueeze(0)
+            
+            # Greedy selection
+            next_token = next_logits.argmax(dim=-1, keepdim=True)
 
             generated = torch.cat([generated, next_token], dim=-1)
             attn_mask = torch.cat([attn_mask, torch.ones_like(next_token)], dim=-1)
