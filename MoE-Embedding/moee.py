@@ -359,12 +359,28 @@ Answer:"""
         attn_mask = attention_mask
 
         for _ in range(max_new_tokens):
-            outputs = self.model(
+            # OLMoE model returns (outputs, sent_emb) tuple
+            model_out = self.model(
                 input_ids=generated,
                 attention_mask=attn_mask,
                 use_cache=False,
             )
-            logits = outputs.logits if hasattr(outputs, "logits") else outputs[0]
+            
+            # Handle tuple return (outputs, sent_emb) from OLMoE
+            if isinstance(model_out, tuple):
+                outputs = model_out[0]
+            else:
+                outputs = model_out
+            
+            # Get logits from the output
+            if hasattr(outputs, "logits"):
+                logits = outputs.logits
+            elif isinstance(outputs, torch.Tensor):
+                logits = outputs
+            else:
+                # Try indexing as a fallback
+                logits = outputs[0] if hasattr(outputs, "__getitem__") else outputs
+            
             next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
 
             generated = torch.cat([generated, next_token], dim=-1)
