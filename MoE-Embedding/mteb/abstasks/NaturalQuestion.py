@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from datasets import load_dataset
+from tqdm.auto import tqdm
 
 from .AbsTaskRetrieval import AbsTaskRetrieval
 from .TaskMetadata import TaskMetadata
@@ -150,8 +151,12 @@ class NaturalQuestions(AbsTaskRetrieval):
         dataset_kwargs = {k: v for k, v in self.metadata_dict["dataset"].items() if v is not None}
 
         for split in eval_splits:
-            hf_ds = load_dataset(**dataset_kwargs, split=split)
+            split_spec = split
             if max_examples is not None:
+                # Limit download size on remote (e.g., Colab) to avoid filling disk.
+                split_spec = f"{split}[:{max_examples}]"
+            hf_ds = load_dataset(**dataset_kwargs, split=split_spec)
+            if max_examples is not None and hasattr(hf_ds, "select"):
                 hf_ds = hf_ds.select(range(max_examples))
 
             corpus_split = {}
@@ -159,7 +164,7 @@ class NaturalQuestions(AbsTaskRetrieval):
             qrels_split = {}
             qa_split: List[QAExample] = []
 
-            for row in hf_ds:
+            for row in tqdm(hf_ds, desc=f"NaturalQuestionsHF [{split}]", total=len(hf_ds)):
                 qid = str(row.get("id"))
                 if qid is None:
                     continue
