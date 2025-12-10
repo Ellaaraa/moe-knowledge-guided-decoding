@@ -325,6 +325,12 @@ Answer:"""
             do_sample=do_sample,
             pad_token_id=self.tokenizer.pad_token_id,
             eos_token_id=self.tokenizer.eos_token_id,
+        ) if hasattr(self.model, "generate") else self._greedy_generate(
+            input_ids=inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
+            max_new_tokens=max_new_tokens,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
         )
         
         # Decode only the generated part (exclude the prompt)
@@ -337,6 +343,37 @@ Answer:"""
             answer = answer.split('\n')[0].strip()
         
         return answer
+
+    def _greedy_generate(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        max_new_tokens: int,
+        eos_token_id: int | None,
+        pad_token_id: int | None,
+    ) -> torch.Tensor:
+        """
+        Minimal greedy generation fallback for models that do not expose `generate`.
+        """
+        generated = input_ids
+        attn_mask = attention_mask
+
+        for _ in range(max_new_tokens):
+            outputs = self.model(
+                input_ids=generated,
+                attention_mask=attn_mask,
+                use_cache=False,
+            )
+            logits = outputs.logits if hasattr(outputs, "logits") else outputs[0]
+            next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+
+            generated = torch.cat([generated, next_token], dim=-1)
+            attn_mask = torch.cat([attn_mask, torch.ones_like(next_token)], dim=-1)
+
+            if eos_token_id is not None and (next_token == eos_token_id).all():
+                break
+
+        return generated
 
     @torch.no_grad()
     def generate_answers_batch(

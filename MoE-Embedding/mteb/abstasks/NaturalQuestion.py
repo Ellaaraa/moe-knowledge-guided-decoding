@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import json
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -308,12 +310,28 @@ class NaturalQuestions(AbsTaskRetrieval):
                 scores[subset_key]["f1"] = qa_metrics["f1"]
         
         # Also store predictions for analysis
-        self.qa_predictions = {
-            split: {
-                "predictions": predictions,
-                "ground_truths": ground_truths_list,
-                "questions": [qa.question for qa in qa_examples],
+        qa_payload = [
+            {
+                "id": qa_examples[i].id,
+                "question": qa_examples[i].question,
+                "prediction": predictions[i],
+                "gold_answers": ground_truths_list[i],
+                "context": (qa_examples[i].context or "")[:1000],  # trim to keep file small
             }
-        }
+            for i in range(len(qa_examples))
+        ]
+        self.qa_predictions = {split: qa_payload}
+
+        # Optionally save QA predictions to disk for inspection
+        if kwargs.get("save_qa_predictions", False):
+            output_folder = kwargs.get("output_folder", "results")
+            os.makedirs(output_folder, exist_ok=True)
+            save_path = os.path.join(output_folder, f"{self.metadata.name}_{split}_qa_predictions.json")
+            try:
+                with open(save_path, "w") as f_out:
+                    json.dump(qa_payload, f_out, indent=2)
+                logger.info(f"Saved QA predictions to {save_path}")
+            except Exception as e:
+                logger.warning(f"Could not save QA predictions: {e}")
         
         return scores
