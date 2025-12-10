@@ -131,13 +131,19 @@ class DenseRetrievalExactSearch:
             f"Scoring Function: {self.score_function_desc[score_function]} ({score_function})"
         )
 
-        itr = range(0, len(corpus), self.corpus_chunk_size)
+        total_chunks = len(range(0, len(corpus), self.corpus_chunk_size))
 
         result_heaps = {
             qid: [] for qid in query_ids
         }  # Keep only the top-k docs for each query
-        for batch_num, corpus_start_idx in enumerate(itr):
-            logger.info(f"Encoding Batch {batch_num + 1}/{len(itr)}...")
+        for batch_num, corpus_start_idx in enumerate(
+            tqdm.tqdm(
+                range(0, len(corpus), self.corpus_chunk_size),
+                desc="Encoding corpus chunks",
+                total=total_chunks,
+            )
+        ):
+            logger.info(f"Encoding Batch {batch_num + 1}/{total_chunks}...")
             corpus_end_idx = min(corpus_start_idx + self.corpus_chunk_size, len(corpus))
 
             # Encode chunk of corpus
