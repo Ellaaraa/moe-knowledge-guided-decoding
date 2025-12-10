@@ -300,14 +300,14 @@ class MOEE(torch.nn.Module):
         Returns:
             Generated answer string
         """
-        # Format prompt similar to KGD approach for fair comparison
-        prompt = f"""Answer the question based on the context below. Give a short, direct answer.
+        # Format prompt for extractive QA - be VERY explicit about using context only
+        prompt = f"""Read the following context and answer the question. Your answer MUST be extracted directly from the context. Do NOT use outside knowledge. If the answer is not in the context, say "not found".
 
 Context: {context}
 
 Question: {question}
 
-Answer:"""
+Answer (extract from context):"""
         
         # Tokenize
         inputs = self.tokenizer(
