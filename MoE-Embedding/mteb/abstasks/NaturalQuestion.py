@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from datasets import load_dataset
+from tqdm.auto import tqdm
 
 from .AbsTaskRetrieval import AbsTaskRetrieval
 from .TaskMetadata import TaskMetadata
@@ -159,7 +160,7 @@ class NaturalQuestions(AbsTaskRetrieval):
             qrels_split = {}
             qa_split: List[QAExample] = []
 
-            for row in hf_ds:
+            for row in tqdm(hf_ds, desc=f"NaturalQuestionsHF [{split}]", total=len(hf_ds)):
                 qid = str(row.get("id"))
                 if qid is None:
                     continue
