@@ -1125,6 +1125,7 @@ def get_args():
     # QA metrics arguments
     parser.add_argument('--compute_qa_metrics', action='store_true', help='Compute Exact Match and F1 metrics for QA tasks (requires answer generation).')
     parser.add_argument('--qa_max_tokens', type=int, default=32, help='Maximum tokens to generate for QA answers.')
+    parser.add_argument('--save_qa_predictions', action='store_true', help='Save QA predictions and gold answers to JSON for inspection.')
     
     return parser.parse_args()
 
@@ -1264,6 +1265,7 @@ if __name__ == '__main__':
                 max_examples=args.max_examples,
                 compute_qa_metrics=args.compute_qa_metrics,
                 qa_max_tokens=args.qa_max_tokens,
+                save_qa_predictions=args.save_qa_predictions,
             )
         
         
