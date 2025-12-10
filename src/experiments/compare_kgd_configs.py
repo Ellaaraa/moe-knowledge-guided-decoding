@@ -232,7 +232,7 @@ def plot_results(results: Dict[str, Any], output_dir: str, timestamp: str):
 def main():
     parser = argparse.ArgumentParser(description="Compare KGD configurations")
     parser.add_argument(
-        "--num-examples", "-n", type=int, default=10,
+        "--num-examples", "-n", type=int, default=5,
         help="Number of examples to evaluate (default: 50)"
     )
     parser.add_argument(
