@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from datasets import load_dataset
 from tqdm.auto import tqdm
 
 from .AbsTaskRetrieval import AbsTaskRetrieval
 from .TaskMetadata import TaskMetadata
+from ..evaluation.evaluators.QAMetrics import compute_exact_match, compute_f1, compute_qa_metrics
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -221,3 +225,95 @@ class NaturalQuestions(AbsTaskRetrieval):
             self.qa_examples[split] = qa_split
 
         self.data_loaded = True
+
+    def evaluate(
+        self,
+        model,
+        split: str = "test",
+        *,
+        encode_kwargs: Dict[str, Any] = {},
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """
+        Evaluate retrieval and optionally QA metrics.
+        
+        If compute_qa_metrics=True in kwargs, will also generate answers
+        using the model and compute Exact Match and F1 scores.
+        """
+        # First, run the standard retrieval evaluation
+        scores = super().evaluate(model, split, encode_kwargs=encode_kwargs, **kwargs)
+        
+        # Check if QA metrics should be computed
+        compute_qa = kwargs.get("compute_qa_metrics", False)
+        
+        if not compute_qa:
+            return scores
+        
+        logger.info("Computing QA metrics (Exact Match and F1)...")
+        
+        # Get QA examples for this split
+        qa_examples = self.qa_examples.get(split, [])
+        if not qa_examples:
+            logger.warning(f"No QA examples found for split {split}")
+            return scores
+        
+        # Check if model has generate_answer method
+        if not hasattr(model, 'generate_answer'):
+            logger.warning("Model does not have generate_answer method, skipping QA metrics")
+            return scores
+        
+        # Get retrieval results to use top-k context
+        # For NQ, each query maps to its own document, so we use the original context
+        # This matches the KGD setup where retrieved context is used
+        
+        top_k_context = kwargs.get("qa_top_k", 1)  # Number of retrieved docs to use as context
+        max_new_tokens = kwargs.get("qa_max_tokens", 32)
+        
+        predictions = []
+        ground_truths_list = []
+        
+        for qa_example in tqdm(qa_examples, desc="Generating answers for QA metrics"):
+            question = qa_example.question
+            # Use the original context (simulating perfect retrieval for fair comparison)
+            # In a real scenario, you would use the retrieved document from the retrieval step
+            context = qa_example.context
+            
+            # Truncate context if too long (use first ~2000 chars like KGD)
+            if context and len(context) > 2000:
+                context = context[:2000]
+            
+            try:
+                # Generate answer
+                answer = model.generate_answer(
+                    question=question,
+                    context=context or "",
+                    max_new_tokens=max_new_tokens,
+                )
+                predictions.append(answer)
+            except Exception as e:
+                logger.warning(f"Error generating answer: {e}")
+                predictions.append("")
+            
+            ground_truths_list.append(qa_example.answers)
+        
+        # Compute QA metrics
+        qa_metrics = compute_qa_metrics(predictions, ground_truths_list)
+        
+        logger.info(f"QA Metrics - Exact Match: {qa_metrics['exact_match']}%, F1: {qa_metrics['f1']}%")
+        
+        # Add QA metrics to the scores for each subset
+        for subset_key in scores:
+            if isinstance(scores[subset_key], dict):
+                scores[subset_key]["exact_match"] = qa_metrics["exact_match"]
+                scores[subset_key]["f1"] = qa_metrics["f1"]
+        
+        # Also store predictions for analysis
+        self.qa_predictions = {
+            split: {
+                "predictions": predictions,
+                "ground_truths": ground_truths_list,
+                "questions": [qa.question for qa in qa_examples],
+            }
+        }
+        
+        return scores

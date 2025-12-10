@@ -277,3 +277,103 @@ class MOEE(torch.nn.Module):
         all_moe_rw = all_moe_rw.cpu().numpy()
         
         return all_embeddings, all_default, all_moe_rw
+
+    @torch.no_grad()
+    def generate_answer(
+        self,
+        question: str,
+        context: str,
+        max_new_tokens: int = 32,
+        temperature: float = 1.0,
+        do_sample: bool = False,
+    ) -> str:
+        """
+        Generate an answer given a question and retrieved context.
+        
+        Args:
+            question: The question to answer
+            context: Retrieved context/passage to use for answering
+            max_new_tokens: Maximum number of tokens to generate
+            temperature: Sampling temperature (1.0 = greedy when do_sample=False)
+            do_sample: Whether to use sampling (False = greedy decoding)
+            
+        Returns:
+            Generated answer string
+        """
+        # Format prompt similar to KGD approach for fair comparison
+        prompt = f"""Answer the question based on the context below. Give a short, direct answer.
+
+Context: {context}
+
+Question: {question}
+
+Answer:"""
+        
+        # Tokenize
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=2048,
+        ).to(self.device)
+        
+        # Generate
+        outputs = self.model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            do_sample=do_sample,
+            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
+        )
+        
+        # Decode only the generated part (exclude the prompt)
+        generated_tokens = outputs[0][inputs['input_ids'].shape[1]:]
+        answer = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        
+        # Clean up the answer (remove leading/trailing whitespace, stop at newline)
+        answer = answer.strip()
+        if '\n' in answer:
+            answer = answer.split('\n')[0].strip()
+        
+        return answer
+
+    @torch.no_grad()
+    def generate_answers_batch(
+        self,
+        questions: List[str],
+        contexts: List[str],
+        max_new_tokens: int = 32,
+        temperature: float = 1.0,
+        do_sample: bool = False,
+    ) -> List[str]:
+        """
+        Generate answers for a batch of questions with their contexts.
+        
+        Args:
+            questions: List of questions to answer
+            contexts: List of contexts (one per question)
+            max_new_tokens: Maximum number of tokens to generate
+            temperature: Sampling temperature
+            do_sample: Whether to use sampling
+            
+        Returns:
+            List of generated answer strings
+        """
+        if len(questions) != len(contexts):
+            raise ValueError("questions and contexts must have same length")
+        
+        answers = []
+        for question, context in tqdm(zip(questions, contexts), 
+                                       total=len(questions), 
+                                       desc="Generating answers"):
+            answer = self.generate_answer(
+                question=question,
+                context=context,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                do_sample=do_sample,
+            )
+            answers.append(answer)
+        
+        return answers
